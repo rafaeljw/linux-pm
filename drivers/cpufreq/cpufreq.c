@@ -1979,11 +1979,14 @@ void cpufreq_suspend(void)
 	if (!cpufreq_driver)
 		return;
 
-	cpus_read_lock();
+	cpufreq_suspended = true;
+
 	if (!has_target() && !cpufreq_driver->suspend)
-		goto suspend;
+		return;
 
 	pr_debug("%s: Suspending Governors\n", __func__);
+
+	guard(cpus_read_lock)();
 
 	for_each_active_policy(policy) {
 		if (has_target())
@@ -1993,10 +1996,6 @@ void cpufreq_suspend(void)
 			pr_err("%s: Failed to suspend driver: %s\n", __func__,
 				cpufreq_driver->name);
 	}
-
-suspend:
-	cpufreq_suspended = true;
-	cpus_read_unlock();
 }
 
 static void cpufreq_resume_policy(struct cpufreq_policy *policy, bool start)
