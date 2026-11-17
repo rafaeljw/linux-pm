@@ -560,10 +560,10 @@ static void acpi_fan_remove(struct platform_device *pdev)
 {
 	struct acpi_fan *fan = platform_get_drvdata(pdev);
 
+	thermal_cooling_device_unregister(fan->cdev);
+
 	if (fan->has_fst)
 		acpi_fan_delete_attributes(fan);
-
-	thermal_cooling_device_unregister(fan->cdev);
 }
 
 #ifdef CONFIG_PM_SLEEP
