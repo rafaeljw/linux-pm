@@ -70,9 +70,9 @@ static ssize_t show_fine_grain_control(struct device *dev, struct device_attribu
 	return sysfs_emit(buf, "%d\n", fan->fif.fine_grain_ctrl);
 }
 
-int acpi_fan_create_attributes(struct acpi_device *device)
+int acpi_fan_create_attributes(struct acpi_fan *fan)
 {
-	struct acpi_fan *fan = acpi_driver_data(device);
+	struct acpi_device *device = fan->adev;
 	int i, status;
 
 	/* _FST is present if we are here */
@@ -127,9 +127,9 @@ rem_fst_attr:
 	return status;
 }
 
-void acpi_fan_delete_attributes(struct acpi_device *device)
+void acpi_fan_delete_attributes(struct acpi_fan *fan)
 {
-	struct acpi_fan *fan = acpi_driver_data(device);
+	struct acpi_device *device = fan->adev;
 	int i;
 
 	sysfs_remove_file(&device->dev.kobj, &fan->fst_speed.attr);

@@ -101,8 +101,8 @@ static inline bool acpi_fan_power_valid(u64 power)
 }
 
 int acpi_fan_get_fst(acpi_handle handle, struct acpi_fan_fst *fst);
-int acpi_fan_create_attributes(struct acpi_device *device);
-void acpi_fan_delete_attributes(struct acpi_device *device);
+int acpi_fan_create_attributes(struct acpi_fan *fan);
+void acpi_fan_delete_attributes(struct acpi_fan *fan);
 
 #if IS_REACHABLE(CONFIG_HWMON)
 int devm_acpi_fan_create_hwmon(struct device *dev);

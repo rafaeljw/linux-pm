@@ -222,10 +222,9 @@ static const struct thermal_cooling_device_ops fan_cooling_ops = {
  * --------------------------------------------------------------------------
 */
 
-static int acpi_fan_get_fif(struct acpi_device *device)
+static int acpi_fan_get_fif(struct acpi_device *device, struct acpi_fan *fan)
 {
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
-	struct acpi_fan *fan = acpi_driver_data(device);
 	struct acpi_buffer format = { sizeof("NNNN"), "NNNN" };
 	u64 fields[4];
 	struct acpi_buffer fif = { sizeof(fields), fields };
@@ -269,9 +268,9 @@ static int acpi_fan_speed_cmp(const void *a, const void *b)
 	return fps1->speed - fps2->speed;
 }
 
-static int acpi_fan_get_fps(struct device *dev, struct acpi_device *device)
+static int acpi_fan_get_fps(struct device *dev, struct acpi_device *device,
+			    struct acpi_fan *fan)
 {
-	struct acpi_fan *fan = acpi_driver_data(device);
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	acpi_status status;
 	int i;
@@ -310,7 +309,7 @@ static int acpi_fan_get_fps(struct device *dev, struct acpi_device *device)
 	return 0;
 }
 
-static int acpi_fan_dsm_init(struct device *dev)
+static int acpi_fan_dsm_init(struct device *dev, struct acpi_fan *fan)
 {
 	union acpi_object dummy = {
 		.package = {
@@ -319,7 +318,6 @@ static int acpi_fan_dsm_init(struct device *dev)
 			.elements = NULL,
 		},
 	};
-	struct acpi_fan *fan = dev_get_drvdata(dev);
 	acpi_handle fan_handle = fan->adev->handle;
 
 	if (!acpi_check_dsm(fan_handle, &acpi_fan_microsoft_guid, 0,
@@ -344,7 +342,7 @@ static int acpi_fan_dsm_init(struct device *dev)
 	return 0;
 }
 
-static int acpi_fan_dsm_set_trip_points(struct device *dev, u64 upper, u64 lower)
+static int acpi_fan_dsm_set_trip_points(struct acpi_fan *fan, u64 upper, u64 lower)
 {
 	union acpi_object args[2] = {
 		{
@@ -360,7 +358,6 @@ static int acpi_fan_dsm_set_trip_points(struct device *dev, u64 upper, u64 lower
 			},
 		},
 	};
-	struct acpi_fan *fan = dev_get_drvdata(dev);
 	union acpi_object in = {
 		.package = {
 			.type = ACPI_TYPE_PACKAGE,
@@ -377,9 +374,8 @@ static int acpi_fan_dsm_set_trip_points(struct device *dev, u64 upper, u64 lower
 	return 0;
 }
 
-static int acpi_fan_dsm_start(struct device *dev)
+static int acpi_fan_dsm_start(struct acpi_fan *fan)
 {
-	struct acpi_fan *fan = dev_get_drvdata(dev);
 	int ret;
 
 	if (!fan->fan_trip_granularity)
@@ -401,11 +397,11 @@ static int acpi_fan_dsm_start(struct device *dev)
 	 * overlap, meaning that the current fan speed needs to be outside at
 	 * least one range.
 	 */
-	ret = acpi_fan_dsm_set_trip_points(dev, fan->fan_trip_granularity, 0);
+	ret = acpi_fan_dsm_set_trip_points(fan, fan->fan_trip_granularity, 0);
 	if (ret < 0)
 		return ret;
 
-	return acpi_fan_dsm_set_trip_points(dev, fan->fan_trip_granularity * 3,
+	return acpi_fan_dsm_set_trip_points(fan, fan->fan_trip_granularity * 3,
 					    fan->fan_trip_granularity * 2);
 }
 
@@ -431,7 +427,7 @@ static int acpi_fan_dsm_update_trips_points(struct device *dev, struct acpi_fan_
 		lower = rounddown((u32)fst->speed - min_trip_distance, fan->fan_trip_granularity);
 	}
 
-	return acpi_fan_dsm_set_trip_points(dev, upper, lower);
+	return acpi_fan_dsm_set_trip_points(fan, upper, lower);
 }
 
 static void acpi_fan_notify_handler(acpi_handle handle, u32 event, void *context)
@@ -493,17 +489,17 @@ static int acpi_fan_probe(struct platform_device *pdev)
 	}
 
 	if (fan->acpi4) {
-		result = acpi_fan_get_fif(device);
+		result = acpi_fan_get_fif(device, fan);
 		if (result)
 			return result;
 
-		result = acpi_fan_get_fps(&pdev->dev, device);
+		result = acpi_fan_get_fps(&pdev->dev, device, fan);
 		if (result)
 			return result;
 	}
 
 	if (fan->has_fst) {
-		result = acpi_fan_dsm_init(&pdev->dev);
+		result = acpi_fan_dsm_init(&pdev->dev, fan);
 		if (result)
 			return result;
 
@@ -518,13 +514,13 @@ static int acpi_fan_probe(struct platform_device *pdev)
 		if (result)
 			return result;
 
-		result = acpi_fan_dsm_start(&pdev->dev);
+		result = acpi_fan_dsm_start(fan);
 		if (result) {
 			dev_err(&pdev->dev, "Failed to start Microsoft fan extensions\n");
 			return result;
 		}
 
-		result = acpi_fan_create_attributes(device);
+		result = acpi_fan_create_attributes(fan);
 		if (result)
 			return result;
 	}
@@ -556,7 +552,7 @@ static int acpi_fan_probe(struct platform_device *pdev)
 
 err_end:
 	if (fan->has_fst)
-		acpi_fan_delete_attributes(device);
+		acpi_fan_delete_attributes(fan);
 
 	return result;
 }
@@ -565,11 +561,9 @@ static void acpi_fan_remove(struct platform_device *pdev)
 {
 	struct acpi_fan *fan = platform_get_drvdata(pdev);
 
-	if (fan->has_fst) {
-		struct acpi_device *device = ACPI_COMPANION(&pdev->dev);
+	if (fan->has_fst)
+		acpi_fan_delete_attributes(fan);
 
-		acpi_fan_delete_attributes(device);
-	}
 	thermal_cooling_device_unregister(fan->cdev);
 }
 
@@ -591,7 +585,7 @@ static int acpi_fan_resume(struct device *dev)
 	int result;
 
 	if (fan->has_fst) {
-		result = acpi_fan_dsm_start(dev);
+		result = acpi_fan_dsm_start(fan);
 		if (result)
 			dev_err(dev, "Failed to start Microsoft fan extensions: %d\n", result);
 	}
