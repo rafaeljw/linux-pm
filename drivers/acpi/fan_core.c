@@ -478,7 +478,6 @@ static int acpi_fan_probe(struct platform_device *pdev)
 	}
 
 	fan->adev = device;
-	device->driver_data = fan;
 	platform_set_drvdata(pdev, fan);
 
 	if (acpi_has_method(device->handle, "_FST")) {
