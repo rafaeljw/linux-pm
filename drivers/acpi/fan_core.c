@@ -109,7 +109,8 @@ static int fan_get_state_acpi4(struct acpi_fan *fan, unsigned long *state)
 	if (fan->fif.fine_grain_ctrl) {
 		/* This control should be same what we set using _FSL by spec */
 		if (fst.control > 100) {
-			dev_dbg(&device->dev, "Invalid control value returned\n");
+			acpi_handle_debug(device->handle,
+					  "Invalid control value returned\n");
 			goto match_fps;
 		}
 
@@ -123,7 +124,7 @@ match_fps:
 			break;
 	}
 	if (i == fan->fps_count) {
-		dev_dbg(&device->dev, "No matching fps control value\n");
+		acpi_handle_debug(device->handle, "No matching fps control value\n");
 		return -EINVAL;
 	}
 
@@ -193,7 +194,7 @@ static int fan_set_state_acpi4(struct acpi_fan *fan, unsigned long state)
 
 	status = acpi_execute_simple_method(device->handle, "_FSL", value);
 	if (ACPI_FAILURE(status)) {
-		dev_dbg(&device->dev, "Failed to set state by _FSL\n");
+		acpi_handle_debug(device->handle, "Failed to set state by _FSL\n");
 		return -ENODEV;
 	}
 
@@ -236,13 +237,13 @@ static int acpi_fan_get_fif(struct acpi_device *device, struct acpi_fan *fan)
 
 	union acpi_object *obj __free(acpi_object_free) = buffer.pointer;
 	if (!obj || obj->type != ACPI_TYPE_PACKAGE) {
-		dev_err(&device->dev, "Invalid _FIF data\n");
+		acpi_handle_err(device->handle, FW_BUG "Invalid _FIF data\n");
 		return -ENODATA;
 	}
 
 	status = acpi_extract_package(obj, &format, &fif);
 	if (ACPI_FAILURE(status)) {
-		dev_err(&device->dev, "Invalid _FIF element\n");
+		acpi_handle_err(device->handle, FW_BUG "Invalid _FIF element\n");
 		return -ENODATA;
 	}
 
@@ -281,7 +282,7 @@ static int acpi_fan_get_fps(struct device *dev, struct acpi_device *device,
 
 	union acpi_object *obj __free(acpi_object_free) = buffer.pointer;
 	if (!obj || obj->type != ACPI_TYPE_PACKAGE || obj->package.count < 2) {
-		dev_err(&device->dev, "Invalid _FPS data\n");
+		acpi_handle_err(device->handle, FW_BUG "Invalid _FPS data\n");
 		return -ENODATA;
 	}
 
@@ -297,7 +298,8 @@ static int acpi_fan_get_fps(struct device *dev, struct acpi_device *device,
 		status = acpi_extract_package(&obj->package.elements[i + 1],
 					      &format, &fps);
 		if (ACPI_FAILURE(status)) {
-			dev_err(&device->dev, "Invalid _FPS element\n");
+			acpi_handle_err(device->handle,
+					FW_BUG "Invalid _FPS element\n");
 			return -ENODATA;
 		}
 	}
