@@ -462,20 +462,19 @@ static void acpi_fan_notify_handler(acpi_handle handle, u32 event, void *context
 
 static int acpi_fan_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
+	struct acpi_device *device = ACPI_COMPANION(dev);
 	int result = 0;
 	struct thermal_cooling_device *cdev;
 	struct acpi_fan *fan;
-	struct acpi_device *device = ACPI_COMPANION(&pdev->dev);
 	char *name;
 
 	if (!device)
 		return -ENODEV;
 
 	fan = devm_kzalloc_obj(&pdev->dev, *fan);
-	if (!fan) {
-		dev_err(&device->dev, "No memory for fan\n");
+	if (!fan)
 		return -ENOMEM;
-	}
 
 	fan->adev = device;
 	platform_set_drvdata(pdev, fan);
@@ -492,30 +491,29 @@ static int acpi_fan_probe(struct platform_device *pdev)
 		if (result)
 			return result;
 
-		result = acpi_fan_get_fps(&pdev->dev, device, fan);
+		result = acpi_fan_get_fps(dev, device, fan);
 		if (result)
 			return result;
 	}
 
 	if (fan->has_fst) {
-		result = acpi_fan_dsm_init(&pdev->dev, fan);
+		result = acpi_fan_dsm_init(dev, fan);
 		if (result)
 			return result;
 
-		result = devm_acpi_fan_create_hwmon(&pdev->dev);
+		result = devm_acpi_fan_create_hwmon(dev);
 		if (result)
 			return result;
 
-		result = devm_acpi_install_notify_handler(&pdev->dev,
-							  ACPI_DEVICE_NOTIFY,
+		result = devm_acpi_install_notify_handler(dev, ACPI_DEVICE_NOTIFY,
 							  acpi_fan_notify_handler,
-							  &pdev->dev);
+							  dev);
 		if (result)
 			return result;
 
 		result = acpi_fan_dsm_start(fan);
 		if (result) {
-			dev_err(&pdev->dev, "Failed to start Microsoft fan extensions\n");
+			dev_err(dev, "Failed to start Microsoft fan extensions\n");
 			return result;
 		}
 
@@ -527,7 +525,7 @@ static int acpi_fan_probe(struct platform_device *pdev)
 	if (!fan->acpi4) {
 		result = acpi_device_update_power(device, NULL);
 		if (result) {
-			dev_err(&device->dev, "Failed to set initial power state\n");
+			dev_err(dev, "Failed to set initial power state\n");
 			goto err_end;
 		}
 	}
@@ -537,13 +535,13 @@ static int acpi_fan_probe(struct platform_device *pdev)
 	else
 		name = acpi_device_bid(device);
 
-	cdev = thermal_cooling_device_create(&pdev->dev, name, fan, &fan_cooling_ops);
+	cdev = thermal_cooling_device_create(dev, name, fan, &fan_cooling_ops);
 	if (IS_ERR(cdev)) {
 		result = PTR_ERR(cdev);
 		goto err_end;
 	}
 
-	dev_dbg(&pdev->dev, "registered as cooling_device%d\n", cdev->id);
+	dev_dbg(dev, "registered as cooling_device%d\n", cdev->id);
 
 	fan->cdev = cdev;
 
