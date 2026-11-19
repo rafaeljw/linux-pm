@@ -840,7 +840,7 @@ repeat:
 		 */
 		pm_runtime_mark_last_busy(dev);
 		retval = 1;
-		goto out;
+		goto success;
 	}
 
 	if (dev->power.runtime_status == RPM_RESUMING ||
@@ -971,8 +971,11 @@ no_callback:
 	}
 	wake_up_all(&dev->power.wait_queue);
 
-	if (retval >= 0)
-		rpm_idle(dev, RPM_ASYNC);
+	if (retval < 0)
+		goto out;
+
+success:
+	rpm_idle(dev, RPM_ASYNC);
 
 out:
 	if (parent && !dev->power.irq_safe) {
