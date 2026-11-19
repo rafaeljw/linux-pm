@@ -518,6 +518,14 @@ static int rpm_idle(struct device *dev, int rpmflags)
 	else if (dev->power.idle_notification)
 		retval = -EINPROGRESS;
 
+	/*
+	 * Update last_busy to defer autosuspend by the full autosuspend delay.
+	 * Since an autosuspend timer may be running and the new last_busy value
+	 * needs to be seen by it, update last_busy before returning an error or
+	 * dropping the spinlock and allowing the timer function to grab it.
+	 */
+	pm_runtime_mark_last_busy(dev);
+
 	if (retval)
 		goto out;
 
@@ -563,7 +571,6 @@ static int rpm_idle(struct device *dev, int rpmflags)
 	if (retval)
 		return retval;
 
-	pm_runtime_mark_last_busy(dev);
 	return rpm_suspend(dev, rpmflags | RPM_AUTO);
 }
 
@@ -1132,6 +1139,13 @@ int __pm_runtime_idle(struct device *dev, int rpmflags)
 	int retval;
 
 	if (rpmflags & RPM_GET_PUT) {
+		/*
+		 * Once the usage counter drops to 0, a leftover autosuspend
+		 * timer may fire before the spinlock below is acquired.  Update
+		 * last_busy first so it does not find the expiration time in
+		 * the past and suspend the device immediately.
+		 */
+		pm_runtime_mark_last_busy(dev);
 		retval = rpm_drop_usage_count(dev);
 		if (retval < 0) {
 			return retval;
