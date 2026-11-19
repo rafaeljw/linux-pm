@@ -833,12 +833,6 @@ repeat:
 		pm_runtime_deactivate_timer(dev);
 
 	if (dev->power.runtime_status == RPM_ACTIVE) {
-		/*
-		 * The attempt to resume the device means that it is needed for
-		 * something, so update its last_busy timestamp as in the case
-		 * in which it actually resumes below.
-		 */
-		pm_runtime_mark_last_busy(dev);
 		retval = 1;
 		goto success;
 	}
@@ -965,7 +959,6 @@ skip_parent:
 	} else {
 no_callback:
 		__update_runtime_status(dev, RPM_ACTIVE);
-		pm_runtime_mark_last_busy(dev);
 		if (parent)
 			atomic_inc(&parent->power.child_count);
 	}
