@@ -566,7 +566,7 @@ static int rpm_idle(struct device *dev, int rpmflags)
 	dev->power.idle_notification = false;
 	wake_up_all(&dev->power.wait_queue);
 
- out:
+out:
 	trace_rpm_return_int(dev, _THIS_IP_, retval);
 	if (retval)
 		return retval;
@@ -604,7 +604,7 @@ static int rpm_suspend(struct device *dev, int rpmflags)
 
 	trace_rpm_suspend(dev, rpmflags);
 
- repeat:
+repeat:
 	retval = rpm_check_suspend_allowed(dev);
 	if (retval < 0)
 		goto out;	/* Conditions are wrong. */
@@ -713,7 +713,7 @@ static int rpm_suspend(struct device *dev, int rpmflags)
 
 	dev_pm_enable_wake_irq_complete(dev);
 
- no_callback:
+no_callback:
 	__update_runtime_status(dev, RPM_SUSPENDED);
 	pm_runtime_deactivate_timer(dev);
 
@@ -752,12 +752,12 @@ static int rpm_suspend(struct device *dev, int rpmflags)
 		spin_lock_irq(&dev->power.lock);
 	}
 
- out:
+out:
 	trace_rpm_return_int(dev, _THIS_IP_, retval);
 
 	return retval;
 
- fail:
+fail:
 	dev_pm_disable_wake_irq_check(dev, true);
 	__update_runtime_status(dev, RPM_ACTIVE);
 	dev->power.deferred_resume = false;
@@ -807,7 +807,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 
 	trace_rpm_resume(dev, rpmflags);
 
- repeat:
+repeat:
 	if (dev->power.runtime_error) {
 		retval = -EINVAL;
 	} else if (dev->power.disable_depth > 0) {
@@ -947,7 +947,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 
 		goto repeat;
 	}
- skip_parent:
+skip_parent:
 
 	if (dev->power.no_callbacks)
 		goto no_callback;	/* Assume success. */
@@ -963,7 +963,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 		pm_runtime_cancel_pending(dev);
 		dev_pm_enable_wake_irq_check(dev, false);
 	} else {
- no_callback:
+no_callback:
 		__update_runtime_status(dev, RPM_ACTIVE);
 		pm_runtime_mark_last_busy(dev);
 		if (parent)
@@ -974,7 +974,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 	if (retval >= 0)
 		rpm_idle(dev, RPM_ASYNC);
 
- out:
+out:
 	if (parent && !dev->power.irq_safe) {
 		spin_unlock_irq(&dev->power.lock);
 
@@ -1026,7 +1026,7 @@ static void pm_runtime_work(struct work_struct *work)
 		break;
 	}
 
- out:
+out:
 	spin_unlock_irq(&dev->power.lock);
 }
 
@@ -1095,7 +1095,7 @@ int pm_schedule_suspend(struct device *dev, unsigned int delay)
 	dev->power.timer_autosuspends = 0;
 	hrtimer_start(&dev->power.suspend_timer, expires, HRTIMER_MODE_ABS);
 
- out:
+out:
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 
 	return retval;
@@ -1419,12 +1419,12 @@ int __pm_runtime_set_status(struct device *dev, unsigned int status)
 		}
 	}
 
- out_set:
+out_set:
 	__update_runtime_status(dev, status);
 	if (!error)
 		dev->power.runtime_error = 0;
 
- out:
+out:
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 
 	if (notify_parent)
@@ -1578,7 +1578,7 @@ void __pm_runtime_disable(struct device *dev, bool check_resume)
 		dev->power.last_status = dev->power.runtime_status;
 	}
 
- out:
+out:
 	spin_unlock_irq(&dev->power.lock);
 }
 EXPORT_SYMBOL_GPL(__pm_runtime_disable);
@@ -1710,7 +1710,7 @@ void pm_runtime_forbid(struct device *dev)
 	atomic_inc(&dev->power.usage_count);
 	rpm_resume(dev, 0);
 
- out:
+out:
 	spin_unlock_irq(&dev->power.lock);
 }
 EXPORT_SYMBOL_GPL(pm_runtime_forbid);
@@ -1742,7 +1742,7 @@ void pm_runtime_allow(struct device *dev)
 	else if (ret > 0)
 		trace_rpm_usage(dev, RPM_AUTO | RPM_ASYNC);
 
- out:
+out:
 	spin_unlock_irq(&dev->power.lock);
 }
 EXPORT_SYMBOL_GPL(pm_runtime_allow);
