@@ -1769,11 +1769,11 @@ static bool __init intel_idle_state_needs_timer_stop(struct cpuidle_state *state
 
 static bool no_acpi __read_mostly;
 module_param(no_acpi, bool, 0444);
-MODULE_PARM_DESC(no_acpi, "Do not use ACPI _CST for building the idle states list");
+MODULE_PARM_DESC(no_acpi, "Do not use ACPI for building the idle state list");
 
 static bool force_use_acpi __read_mostly; /* No effect if no_acpi is set. */
 module_param_named(use_acpi, force_use_acpi, bool, 0444);
-MODULE_PARM_DESC(use_acpi, "Use ACPI _CST for building the idle states list");
+MODULE_PARM_DESC(use_acpi, "Force using ACPI for building the idle state list");
 
 static bool no_native __read_mostly; /* No effect if no_acpi is set. */
 module_param_named(no_native, no_native, bool, 0444);
