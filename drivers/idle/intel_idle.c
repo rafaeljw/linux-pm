@@ -1779,6 +1779,10 @@ static bool no_native __read_mostly; /* No effect if no_acpi is set. */
 module_param_named(no_native, no_native, bool, 0444);
 MODULE_PARM_DESC(no_native, "Ignore cpu specific (native) idle states in lieu of ACPI idle states");
 
+static bool prefer_cst __read_mostly; /* No effect if no_acpi is set. */
+module_param(prefer_cst, bool, 0444);
+MODULE_PARM_DESC(prefer_cst, "Prefer ACPI _CST idle states to ACPI _LPI idle states");
+
 static struct acpi_processor_power acpi_state_table __initdata;
 static bool acpi_lpi_available __initdata;
 
@@ -1837,7 +1841,8 @@ static bool __init intel_idle_acpi_extract_cst_cstates(void)
 		if (!pr)
 			continue;
 
-		if (acpi_processor_evaluate_cst(pr->handle, cpu, &acpi_state_table))
+		if (acpi_processor_evaluate_cst(pr->handle, cpu, &acpi_state_table) ||
+		    !acpi_state_table.count)
 			continue;
 
 		acpi_state_table.count++;
@@ -1854,13 +1859,12 @@ static bool __init intel_idle_acpi_extract_cst_cstates(void)
 
 static bool __init intel_idle_acpi_extract_cstates(void)
 {
-	if (intel_idle_acpi_extract_lpi_cstates())
-		return true;
+	if (prefer_cst)
+		return intel_idle_acpi_extract_cst_cstates() ||
+			intel_idle_acpi_extract_lpi_cstates();
 
-	if (intel_idle_acpi_extract_cst_cstates())
-		return true;
-
-	return false;
+	return intel_idle_acpi_extract_lpi_cstates() ||
+		intel_idle_acpi_extract_cst_cstates();
 }
 
 static bool __init intel_idle_acpi_probe(void)

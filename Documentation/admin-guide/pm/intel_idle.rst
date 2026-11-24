@@ -94,7 +94,9 @@ objects representing the CPUs in the system and ``_LPI`` processing produces a
 non-empty list of valid idle states, it will be used.  Otherwise, ``_CST`` will
 be used so long as it is present under at least one of the ACPI objects
 representing the CPUs in the system and it returns a non-empty list of valid
-idle states.  In either case, since the ``CPUIdle`` subsystem expects that the
+idle states.  [There is a module parameter that can be used to tell the driver
+to prefer ``_CST`` to ``_LPI`` and reverse the order in which they are tried.]
+In either case, since the ``CPUIdle`` subsystem expects that the
 list of idle states supplied by the driver will be suitable for all of the CPUs
 handled by it and ``intel_idle`` is registered as the ``CPUIdle`` driver for all
 of the CPUs in the system, ``intel_idle`` looks for the first CPU where the
@@ -223,10 +225,10 @@ even if they have been enumerated (see :ref:`cpu-pm-qos` in
 Documentation/admin-guide/pm/cpuidle.rst).
 Setting ``max_cstate`` to 0 causes the ``intel_idle`` initialization to fail.
 
-The ``no_acpi``, ``use_acpi`` and ``no_native`` module parameters are
-recognized by ``intel_idle`` if the kernel has been configured with ACPI
-support.  In the case that ACPI is not configured these flags have no impact
-on functionality.
+The ``no_acpi``, ``use_acpi``, ``no_native``, and ``prefer_cst`` module
+parameters are recognized by ``intel_idle`` if the kernel has been configured
+with ACPI support.  If ACPI is not configured, these flags have no impact on
+functionality.
 
 ``no_acpi`` - Do not use ACPI at all.  Only native mode is available, no
 ACPI mode.
@@ -236,6 +238,9 @@ C-states on/off status in native mode.
 
 ``no_native`` - Work only in ACPI mode, no native mode available (ignore
 all custom tables).
+
+``prefer_cst`` - When using ACPI, prefer idle states coming from ``_CST`` to
+idle states coming from ``_LPI`` (which is preferred by default).
 
 The value of the ``states_off`` module parameter (0 by default) represents a
 list of idle states to be disabled by default in the form of a bitmask.
