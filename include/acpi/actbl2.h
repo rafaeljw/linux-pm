@@ -38,6 +38,7 @@
 #define ACPI_SIG_MADT           "APIC"	/* Multiple APIC Description Table */
 #define ACPI_SIG_MCFG           "MCFG"	/* PCI Memory Mapped Configuration table */
 #define ACPI_SIG_MCHI           "MCHI"	/* Management Controller Host Interface table */
+#define ACPI_SIG_MISC           "MISC"	/* Miscellaneous GUIDed Table */
 #define ACPI_SIG_MPAM           "MPAM"	/* Memory System Resource Partitioning and Monitoring Table */
 #define ACPI_SIG_MPST           "MPST"	/* Memory Power State Table */
 #define ACPI_SIG_MRRM           "MRRM"	/* Memory Range and Region Mapping table */
@@ -61,6 +62,7 @@
 #define ACPI_SIG_SVKL           "SVKL"	/* Storage Volume Key Location Table */
 #define ACPI_SIG_SWFT           "SWFT"	/* SoundWire File Table */
 #define ACPI_SIG_TDEL           "TDEL"	/* TD Event Log Table */
+#define ACPI_SIG_UBRT           "UBRT"	/* UnifiedBus Root Table */
 
 /*
  * All tables must be byte-packed to match the ACPI specification, since
@@ -748,7 +750,8 @@ struct acpi_iort_root_complex {
 	u32 pci_segment_number;
 	u8 memory_address_limit;	/* Memory address size limit */
 	u16 pasid_capabilities;	/* PASID Capabilities */
-	u8 reserved[];		/* Reserved, must be zero */
+	u8 reserved[1]; /* Reserved, must be zero */
+	u32 flags; /* Flags (IORT E.c, RC node revision >= 4) */
 };
 
 /* Masks for ats_attribute field above */
@@ -759,6 +762,9 @@ struct acpi_iort_root_complex {
 
 /* Masks for pasid_capabilities field above */
 #define ACPI_IORT_PASID_MAX_WIDTH       (0x1F)	/* Bits 0-4 */
+
+/* Masks for Flags field above */
+#define ACPI_IORT_RC_PASID_SUPPORTED (1) /* The root complex PASID support */
 
 struct acpi_iort_smmu {
 	u64 base_address;	/* SMMU base address */
@@ -922,7 +928,7 @@ struct acpi_iovt_iommu {
 /* Masks for Flags field above */
 #define ACPI_IOVT_IOMMU_PCI_DEVICE		(1<<0)
 #define ACPI_IOVT_IOMMU_PXM_VALID		(1<<1)
-#define ACPI_IOVT_IOMMU_MAGAGE_BY_SEGMENT	(1<<2)
+#define ACPI_IOVT_IOMMU_MANAGE_BY_SEGMENT	(1<<2)
 #define ACPI_IOVT_IOMMU_HW_CAP_SUPPORT		(1<<3)
 #define ACPI_IOVT_IOMMU_MSI_INT_BYPASS		(1<<4)
 
@@ -1175,6 +1181,7 @@ struct acpi_keyp_common_header {
 
 enum acpi_keyp_type {
 	ACPI_KEYP_TYPE_CONFIG_UNIT = 0,
+	ACPI_KEYP_TYPE_RESERVED = 1,
 };
 
 /* Root Port Information Structure */
@@ -1203,6 +1210,10 @@ enum acpi_keyp_protocol_type {
 	ACPI_KEYP_PROTO_TYPE_CXL,
 	ACPI_KEYP_PROTO_TYPE_RESERVED
 };
+
+/* Only version 1 of the KCU Structure is currently defined in the spec */
+
+#define ACPI_KEYP_CONFIG_UNIT_VERSION 1
 
 #define ACPI_KEYP_F_TVM_USABLE      (1)
 
@@ -1877,6 +1888,35 @@ struct acpi_table_mchi {
 
 /*******************************************************************************
  *
+ * MISC - Miscellaneous GUIDed Table
+ *
+ * Conforms to section "Miscellaneous GUIDed Table Entries" of ACPI
+ * Specification v6.5
+ *
+ ******************************************************************************/
+
+struct acpi_misc_guid_entry {
+	u8 entry_guid[16];
+	u32 entry_length;
+	u32 revision;
+	char producer_id[ACPI_NAMESEG_SIZE] ACPI_NONSTRING; /* ACPI Vendor ID */
+	u8 data[];
+};
+
+/* Minimum length of a MISC entry (the header fields, without any Data) */
+
+#define ACPI_MISC_MIN_ENTRY_LENGTH 28
+
+struct acpi_table_misc {
+	struct acpi_table_header header; /* Common ACPI table header */
+	/*
+	 * Immediately followed by one or more variable-length entries:
+	 * struct acpi_misc_guid_entry Entries[];
+	 */
+};
+
+/*******************************************************************************
+ *
  * MPAM - Memory System Resource Partitioning and Monitoring
  *
  * Conforms to "ACPI for Memory System Resource Partitioning and Monitoring 2.0"
@@ -1968,7 +2008,7 @@ struct acpi_mpam_resource_node {
 struct acpi_mpam_msc_node {
 	u16 length;
 	u8 interface_type;
-	u8 reserved;
+	u8 type;
 	u32 identifier;
 	u64 base_address;
 	u32 mmio_size;
@@ -1978,7 +2018,7 @@ struct acpi_mpam_msc_node {
 	u32 overflow_interrupt_affinity;
 	u32 error_interrupt;
 	u32 error_interrupt_flags;
-	u32 reserved2;
+	u32 mpam_fb_offset;
 	u32 error_interrupt_affinity;
 	u32 max_nrdy_usec;
 	u64 hardware_id_linked_device;
@@ -3707,6 +3747,158 @@ struct acpi_table_tdel {
 	u64 log_area_minimum_length;
 	u64 log_area_start_address;
 };
+
+/*******************************************************************************
+ *
+ * UBRT - UnifiedBus Root Table
+ *        Revision 1
+ *
+ * Conforms to "UnifiedBus Root Table (UBRT) Specification"
+ * Revision 1.0, Release Date 2026-03-05
+ *
+ ******************************************************************************/
+
+struct acpi_table_ubrt {
+	struct acpi_table_header header; /* Common ACPI table header */
+	u32 count; /* Number of sub-tables */
+};
+
+/* UBRT sub-table entry (16 bytes) */
+
+struct acpi_ubrt_subtable {
+	u8 type; /* Sub-table type (0=UBC, 1=UMMU, 2=reserved_mem) */
+	u8 reserved[7]; /* Reserved, must be zero */
+	u64 pointer; /* Physical address of the sub-table */
+};
+
+/* Values for Type field above */
+
+#define ACPI_UBRT_TYPE_UBC 0 /* UBC information sub-table */
+#define ACPI_UBRT_TYPE_UMMU 1 /* UMMU information sub-table */
+#define ACPI_UBRT_TYPE_RESERVED_MEM \
+	2 /* UB reserved memory information sub-table */
+
+/*
+ * UBRT Sub-tables, correspond to Type in struct acpi_ubrt_subtable.
+ * These are accessed via the physical Pointer field - not contiguous with UBRT.
+ */
+
+/* Common header for all UBRT sub-tables */
+
+struct acpi_ubrt_header {
+	char name[16]; /* Table name, null-terminated */
+	u32 total_size; /* Total size including header */
+	u8 version; /* Version number */
+	u8 reserved[3]; /* Reserved, must be zero */
+	u32 remaining_size; /* Remaining size of the sub-table */
+	u32 checksum; /* Entire table must sum to zero */
+};
+
+/* Type 0: UBC Information Table */
+
+struct acpi_ubrt_ubc {
+	struct acpi_ubrt_header header; /* Common sub-table header */
+	u32 local_cna_start; /* Start CNA available for local UBPU */
+	u32 local_cna_end; /* End CNA available for local UBPU (included) */
+	u32 local_eid_start; /* Start EID available for local UBPU */
+	u32 local_eid_end; /* End EID available for local UBPU (included) */
+	u8 feature_sets; /* Features enabled for the UBC */
+	u8 reserved[3]; /* Reserved, must be zero */
+	u16 cluster_mode; /* System operating mode */
+	u16 ubc_count; /* Number of UBC structures */
+};
+
+/* Values for feature_sets field above */
+
+#define ACPI_UBRT_UBC_FEAT_MMIO_TOKEN (1 << 0) /* Bit 0: MMIO token value */
+#define ACPI_UBRT_UBC_FEAT_MCTP_UB (1 << 1) /* Bit 1: MCTP over UB */
+
+/* Values for cluster_mode field above */
+
+#define ACPI_UBRT_CLUSTER_MODE_STANDALONE 0
+#define ACPI_UBRT_CLUSTER_MODE_SUPERPOD 1
+
+/* UBC Structure entry (one per ubc_count) */
+
+struct acpi_ubrt_ubc_entry {
+	u32 interrupt_id_start; /* Start interrupt ID */
+	u32 interrupt_id_end; /* End interrupt ID (included) */
+	u64 hpa_base; /* Base address of available HPA */
+	u64 hpa_size; /* Size of available HPA */
+	u8 memory_size_limit; /* Maximum address bit width */
+	u8 dma_cca; /* DMA and cache coherent attribute */
+	u16 ummu_mapping; /* Mapping between UBC and UMMU */
+	u16 proximity_domain; /* NUMA domain sequence number */
+	u16 reserved; /* Reserved, must be zero */
+	u64 msg_queue_base; /* MSG queue register base address */
+	u64 msg_queue_size; /* MSG queue register size */
+	u16 msg_queue_depth; /* MSG queue depth */
+	u16 msg_queue_interrupt; /* MSG queue interrupt ID */
+	u8 msg_queue_interrupt_attr; /* MSG queue interrupt attribute */
+	u8 reserved1[59]; /* Reserved, must be zero */
+	u8 guid[16]; /* UBC GUID */
+	u8 vendor_info[256]; /* Vendor-defined information */
+};
+
+/* Values for dma_cca field above */
+
+#define ACPI_UBRT_UBC_DMA_ONLY 0
+#define ACPI_UBRT_UBC_DMA_CCA 1
+
+/* Values for msg_queue_interrupt_attr field above */
+
+#define ACPI_UBRT_UBC_MSG_INT_LEVEL (0 << 0) /* Bit 0: level-triggered */
+#define ACPI_UBRT_UBC_MSG_INT_EDGE (1 << 0) /* Bit 0: edge-triggered */
+#define ACPI_UBRT_UBC_MSG_INT_HIGH \
+	(0 << 1) /* Bit 1: high level (rising edge) */
+#define ACPI_UBRT_UBC_MSG_INT_LOW (1 << 1) /* Bit 1: low level (falling edge) */
+
+/* Type 1: UMMU Information Table */
+
+struct acpi_ubrt_ummu {
+	struct acpi_ubrt_header header; /* Common sub-table header */
+	u16 ummu_count; /* Number of UMMU structures */
+	u8 reserved[6]; /* Reserved, must be zero */
+};
+
+/* UMMU Structure entry (one per ummu_count) */
+
+struct acpi_ubrt_ummu_entry {
+	u64 base_address; /* Base address of UMMU register */
+	u64 size; /* Size of UMMU register */
+	u32 reserved; /* Reserved, must be zero */
+	u16 proximity_domain; /* NUMA domain sequence number */
+	u16 reserved1; /* Reserved, must be zero */
+	u64 pmu_base_address; /* PMU register base address */
+	u64 pmu_size; /* PMU register size */
+	u32 reserved2; /* Reserved, must be zero */
+	u32 min_token_id; /* Minimum token_ID */
+	u32 max_token_id; /* Maximum token_ID */
+	u8 reserved3[26]; /* Reserved, must be zero */
+	u16 vendor_id; /* Vendor ID */
+	u8 vendor_info[80]; /* Vendor-defined information */
+};
+
+/* Type 2: UB Reserved Memory Information Table */
+
+struct acpi_ubrt_reserved_mem {
+	struct acpi_ubrt_header header; /* Common sub-table header */
+	u16 memory_ranges_count; /* Number of memory ranges */
+	u8 reserved[6]; /* Reserved, must be zero */
+};
+
+/* Memory Range entry (one per memory_ranges_count) */
+
+struct acpi_ubrt_mem_range {
+	u8 flags; /* Memory segment flags */
+	u8 reserved[7]; /* Reserved, must be zero */
+	u64 memory_base; /* Base address of allocated UB memory (64KB aligned) */
+	u64 memory_size; /* Size of allocated UB memory (64KB aligned) */
+};
+
+/* Values for Flags field above */
+
+#define ACPI_UBRT_MEM_FLAG_1_1_MAPPING (1 << 0) /* Bit 0: 1:1 mapped mode */
 
 /* Reset to default packing */
 

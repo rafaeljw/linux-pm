@@ -334,7 +334,7 @@ acpi_ex_convert_to_ascii(u64 integer,
 			hex_char = (u8)
 			    acpi_ut_hex_to_ascii_char(integer, ACPI_MUL_4(j));
 
-			/* Supress leading zeros until the first non-zero character */
+			/* Suppress leading zeros until the first non-zero character */
 
 			if (hex_char == ACPI_ASCII_ZERO && supress_zeros) {
 				continue;
@@ -421,7 +421,7 @@ acpi_ex_convert_to_string(union acpi_operand_object * obj_desc,
 			/*
 			 * From to_hex_string.
 			 *
-			 * Supress leading zeros and append "0x"
+			 * Suppress leading zeros and append "0x"
 			 */
 			string_length =
 			    ACPI_MUL_2(acpi_gbl_integer_byte_width) + 2;

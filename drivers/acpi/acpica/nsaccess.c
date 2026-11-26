@@ -292,7 +292,7 @@ acpi_ns_lookup(union acpi_generic_state *scope_info,
 	struct acpi_namespace_node *current_node = NULL;
 	struct acpi_namespace_node *this_node = NULL;
 	u32 num_segments;
-	u32 num_carats;
+	u32 ACPI_UNUSED_VAR num_carats;
 	acpi_name simple_name;
 	acpi_object_type type_to_check_for;
 	acpi_object_type this_search_type;

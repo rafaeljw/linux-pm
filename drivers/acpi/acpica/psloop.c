@@ -464,8 +464,9 @@ acpi_status acpi_ps_parse_loop(struct acpi_walk_state *walk_state)
 						walk_state->aml =
 						    parser_state->aml;
 					}
-					ACPI_FREE(acpi_ut_pop_generic_state
-						  (&walk_state->control_state));
+					acpi_ut_delete_generic_state(
+						acpi_ut_pop_generic_state(
+							&walk_state->control_state));
 				}
 				op = NULL;
 				continue;

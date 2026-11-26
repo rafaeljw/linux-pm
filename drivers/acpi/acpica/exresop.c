@@ -376,6 +376,32 @@ acpi_ex_resolve_operands(u16 opcode,
 		case ARGI_INTEGER:
 
 			/*
+			 * Resolving an Arg or Local can leave an Index reference to a
+			 * package element. Resolve that element before integer conversion,
+			 * without changing reference-preserving operands such as Store.
+			 * Leave the synthetic operand resolution used by Increment and
+			 * Decrement unchanged; those operators also need reference-target
+			 * handling when writing their result.
+			 */
+			if ((walk_state->opcode != AML_INCREMENT_OP) &&
+			    (walk_state->opcode != AML_DECREMENT_OP) &&
+			    (obj_desc->common.type ==
+			     ACPI_TYPE_LOCAL_REFERENCE) &&
+			    (obj_desc->reference.class ==
+			     ACPI_REFCLASS_INDEX) &&
+			    (obj_desc->reference.target_type ==
+			     ACPI_TYPE_PACKAGE)) {
+				status = acpi_ex_resolve_to_value(stack_ptr,
+								  walk_state);
+				if (ACPI_FAILURE(status)) {
+					return_ACPI_STATUS(status);
+				}
+
+				acpi_ut_remove_reference(obj_desc);
+				obj_desc = *stack_ptr;
+			}
+
+			/*
 			 * Need an operand of type ACPI_TYPE_INTEGER, but we can
 			 * implicitly convert from a STRING or BUFFER.
 			 *

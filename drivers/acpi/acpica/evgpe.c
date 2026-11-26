@@ -537,6 +537,361 @@ error_exit:
 
 /*******************************************************************************
  *
+ * FUNCTION:    acpi_ev_notify_list_has_owner
+ *
+ * PARAMETERS:  notify          - List of notify dispatch events
+ *              owner_id        - Table owner_id being unloaded that should match
+ *                                one of the notify device nodes on the list
+ *
+ * RETURN:      Return TRUE if at least one of the device nodes matches the
+ *              passed owner_id. Return FALSE if all notify list objects don't
+ *              match the passed owner_id.
+ *
+ * DESCRIPTION: Check whether at least on object on the notify list matches its
+ *              owner_id to the one passed as a function parameter. That means
+ *              that at least one device has ownership over an object on this
+ *              notify list.
+ *
+ ******************************************************************************/
+static u8 acpi_ev_notify_list_has_owner(struct acpi_gpe_notify_info *notify,
+					acpi_owner_id owner_id)
+{
+	while (notify) {
+		if (notify->device_node->owner_id == owner_id) {
+			return (TRUE);
+		}
+		notify = notify->next;
+	}
+	return (FALSE);
+}
+
+/*******************************************************************************
+ *
+ * FUNCTION:    acpi_ev_unlink_notify_list_dev_id
+ *
+ * PARAMETERS:  owner_id        - Table owner_id being unloaded that should match
+ *                                the devices on the notify_list.
+ *              notify_list     - Address of the notify_list from the GPE
+ *              to_free_list    - Address of a struct acpi_gpe_notify_info pointer that
+ *                                will later be used to free the device objects
+ *                                from the list that match the owner_id
+ *
+ * RETURN:      Return TRUE if the original notify_list was emptied after the
+ *              unlinking is done. Return FALSE otherwise.
+ *
+ * DESCRIPTION: Helper in processing the notify_list during table unloading.
+ *              notify_list can contain devices from other tables. Only devices
+ *              from the table currently getting unloaded should be cleared from
+ *              this list. This helper parses the list and moves nodes that
+ *              match the unloaded table's ID to a separate single linked list.
+ *              That list shall be later freed node by node. It shouldn't be
+ *              freed immediately as freeing/allocating should be avoided on
+ *              some system when the global spinlock is held.
+ *
+ ******************************************************************************/
+static u8
+acpi_ev_unlink_notify_list_dev_id(acpi_owner_id owner_id,
+				  struct acpi_gpe_notify_info **notify_list,
+				  struct acpi_gpe_notify_info **to_free_list)
+{
+	/* Cursor pointer that will move through all notify_list nodes addresses */
+	struct acpi_gpe_notify_info **notify_pointer = notify_list;
+	/* Currently looked at structure in the loop iteration */
+	struct acpi_gpe_notify_info *node = *notify_pointer;
+
+	/*
+	 * Go through all Notify structures to find devices matching the owner_id
+	 * that is getting unloaded
+	 */
+	while (node) {
+		if (node->device_node->owner_id == owner_id) {
+			/* Modify original list by unlinking Node */
+			*notify_pointer = node->next;
+			/* Link the unlinked node to the to-be-freed list */
+			node->next = *to_free_list;
+			*to_free_list = node;
+		} else {
+			/* Move the cursor one node further */
+			notify_pointer = &node->next;
+		}
+		/* Grab the next node or NULL if there is no more */
+		node = *notify_pointer;
+	}
+
+	/*
+	 * If the original list was emptied return TRUE so that the caller knows to
+	 * move the dispatch type from Notify to None
+	 */
+	return (*notify_list == NULL);
+}
+
+/*******************************************************************************
+ *
+ * FUNCTION:    acpi_ev_dispatch_type_hidden_handler
+ *
+ * PARAMETERS:  gpe_event_info  - Struct where GPE dispatch type is stored
+ *              owner_id        - Table owner_id being unloaded that should match
+ *                                the gpe_event_info
+ *
+ * RETURN:      Return the dispatch type if it is either explicitly present or
+ *              hidden behind the handler saved method_node. The GPE has to also
+ *              match the table ID passed through owner_id to this function.
+ *              Return 0 if the above criteria aren't matched.
+ *
+ * DESCRIPTION: Check whether a passed GPE event info is of either DISPATCH,
+ *              NOTIFY or HANDLER type. Then verify it belongs to the table
+ *              ID passed as an argument and that it has a Method Node. Helper
+ *              is used for example with cleaning up after table unloading.
+ *
+ ******************************************************************************/
+static u8
+acpi_ev_dispatch_type_hidden_handler(struct acpi_gpe_event_info *gpe_event_info,
+				     acpi_owner_id owner_id)
+{
+	u8 gpe_dispatch_type = ACPI_GPE_DISPATCH_TYPE(gpe_event_info->flags);
+	struct acpi_gpe_handler_info *handler;
+	struct acpi_gpe_notify_info *notify;
+
+	switch (gpe_dispatch_type) {
+	case ACPI_GPE_DISPATCH_METHOD:
+		if (!(gpe_event_info->dispatch.method_node) ||
+		    (gpe_event_info->dispatch.method_node->owner_id !=
+		     owner_id)) {
+			return 0;
+		}
+		break;
+
+	case ACPI_GPE_DISPATCH_NOTIFY:
+		notify = gpe_event_info->dispatch.notify_list;
+		if (!acpi_ev_notify_list_has_owner(notify, owner_id)) {
+			return 0;
+		}
+		break;
+
+	/* Method or Notify can be saved if the handler is present */
+	case ACPI_GPE_DISPATCH_HANDLER:
+	case ACPI_GPE_DISPATCH_RAW_HANDLER:
+		handler = gpe_event_info->dispatch.handler;
+		if (!(handler->method_node)) {
+			return 0;
+		}
+
+		switch (ACPI_GPE_DISPATCH_TYPE(handler->original_flags)) {
+		case ACPI_GPE_DISPATCH_METHOD:
+			if (handler->method_node->owner_id != owner_id) {
+				return 0;
+			}
+			break;
+		case ACPI_GPE_DISPATCH_NOTIFY:
+			if (!acpi_ev_notify_list_has_owner(
+				    ACPI_CAST_PTR(struct acpi_gpe_notify_info,
+						  handler->method_node),
+				    owner_id)) {
+				return 0;
+			}
+			break;
+		default:
+			return 0;
+		}
+
+		break;
+
+	default:
+		return 0;
+	}
+	return gpe_dispatch_type;
+}
+
+/*******************************************************************************
+ *
+ * FUNCTION:    acpi_ev_clear_gpe_dispatch_by_owner
+ *
+ * PARAMETERS:  owner_id        - Table owner_id being unloaded
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Clear GPE dispatch info for methods belonging to the table
+ *              being unloaded. If any matching GPE is currently dispatching,
+ *              it is not cleared and AE_ABORT_METHOD is returned.
+ *
+ ******************************************************************************/
+
+acpi_status acpi_ev_clear_gpe_dispatch_by_owner(acpi_owner_id owner_id)
+{
+	struct acpi_gpe_xrupt_info *gpe_xrupt_info;
+	struct acpi_gpe_block_info *gpe_block;
+	struct acpi_gpe_event_info *gpe_event_info;
+	u32 gpe_number;
+	acpi_cpu_flags flags;
+	acpi_status status = AE_OK;
+	u32 gpe_dispatch_type;
+	struct acpi_gpe_handler_info *handler;
+	struct acpi_gpe_notify_info *list;
+	struct acpi_gpe_notify_info *free_list = NULL;
+
+	ACPI_FUNCTION_TRACE_U32(ev_clear_gpe_dispatch_by_owner, owner_id);
+
+	if (owner_id == 0) {
+		return_ACPI_STATUS(AE_OK);
+	}
+
+	status = acpi_ut_acquire_mutex(ACPI_MTX_EVENTS);
+	if (ACPI_FAILURE(status)) {
+		return_ACPI_STATUS(status);
+	}
+
+	flags = acpi_os_acquire_lock(acpi_gbl_gpe_lock);
+
+	/* Walk all GPE interrupt blocks */
+
+	gpe_xrupt_info = acpi_gbl_gpe_xrupt_list_head;
+	while (gpe_xrupt_info) {
+		gpe_block = gpe_xrupt_info->gpe_block_list_head;
+		while (gpe_block) {
+			/*
+			 * Walk all GPEs in this block to make sure none are blocked from
+			 * getting cleared with disable_for_dispatch
+			 */
+
+			for (gpe_number = 0; gpe_number < gpe_block->gpe_count;
+			     gpe_number++) {
+				gpe_event_info =
+					&gpe_block->event_info[gpe_number];
+				gpe_dispatch_type =
+					acpi_ev_dispatch_type_hidden_handler(
+						gpe_event_info, owner_id);
+				if ((gpe_dispatch_type ==
+					     ACPI_GPE_DISPATCH_METHOD ||
+				     gpe_dispatch_type ==
+					     ACPI_GPE_DISPATCH_NOTIFY) &&
+				    gpe_event_info->disable_for_dispatch) {
+					/* At least one handler is polling or executing, cannot clear */
+					status = AE_ABORT_METHOD;
+					acpi_os_release_lock(acpi_gbl_gpe_lock,
+							     flags);
+					(void)acpi_ut_release_mutex(
+						ACPI_MTX_EVENTS);
+					return_ACPI_STATUS(status);
+				}
+			}
+
+			gpe_block = gpe_block->next;
+		}
+
+		gpe_xrupt_info = gpe_xrupt_info->next;
+	}
+
+	gpe_xrupt_info = acpi_gbl_gpe_xrupt_list_head;
+	while (gpe_xrupt_info) {
+		gpe_block = gpe_xrupt_info->gpe_block_list_head;
+		while (gpe_block) {
+			/* Walk all GPEs in this block */
+
+			for (gpe_number = 0; gpe_number < gpe_block->gpe_count;
+			     gpe_number++) {
+				gpe_event_info =
+					&gpe_block->event_info[gpe_number];
+
+				gpe_dispatch_type =
+					acpi_ev_dispatch_type_hidden_handler(
+						gpe_event_info, owner_id);
+				switch (gpe_dispatch_type) {
+				case ACPI_GPE_DISPATCH_METHOD:
+					/*
+					 * GPE method belongs to table being unloaded. Clear
+					 * only the dispatch type, preserve other flags.
+					 */
+					gpe_event_info->flags &=
+						~ACPI_GPE_DISPATCH_MASK;
+					gpe_event_info->dispatch
+						.method_node = NULL;
+
+					/*
+					 * Hardware-disable the GPE so a late interrupt
+					 * cannot fire and land in the "no handler" default
+					 * branch with disable_for_dispatch stuck at TRUE.
+					 */
+					(void)acpi_hw_low_set_gpe(
+						gpe_event_info,
+						ACPI_GPE_DISABLE);
+					break;
+
+				case ACPI_GPE_DISPATCH_NOTIFY:
+					if (acpi_ev_unlink_notify_list_dev_id(
+						    owner_id,
+						    &gpe_event_info->dispatch
+							     .notify_list,
+						    &free_list)) {
+						gpe_event_info->flags &=
+							~ACPI_GPE_DISPATCH_MASK;
+						(void)acpi_hw_low_set_gpe(
+							gpe_event_info,
+							ACPI_GPE_DISABLE);
+					}
+					break;
+
+				case ACPI_GPE_DISPATCH_HANDLER:
+				case ACPI_GPE_DISPATCH_RAW_HANDLER:
+
+					handler =
+						gpe_event_info->dispatch.handler;
+					gpe_dispatch_type =
+						ACPI_GPE_DISPATCH_TYPE(
+							handler->original_flags);
+
+					/* Forget the hidden method so handler removal can't restore it */
+					if (gpe_dispatch_type ==
+					    ACPI_GPE_DISPATCH_METHOD) {
+						handler->method_node = NULL;
+						handler->original_flags &=
+							~ACPI_GPE_DISPATCH_MASK; /* -> NONE */
+						handler->originally_enabled =
+							FALSE;
+					} else if (gpe_dispatch_type ==
+						   ACPI_GPE_DISPATCH_NOTIFY) {
+						list = ACPI_CAST_PTR(
+							struct acpi_gpe_notify_info,
+							handler->method_node);
+						if (acpi_ev_unlink_notify_list_dev_id(
+							    owner_id, &list,
+							    &free_list)) {
+							handler->original_flags &=
+								~ACPI_GPE_DISPATCH_MASK;
+							handler->originally_enabled =
+								FALSE;
+						}
+						handler->method_node = ACPI_CAST_PTR(
+							struct acpi_namespace_node,
+							list);
+					}
+					break;
+
+				default:
+					break;
+				}
+			}
+
+			gpe_block = gpe_block->next;
+		}
+
+		gpe_xrupt_info = gpe_xrupt_info->next;
+	}
+
+	acpi_os_release_lock(acpi_gbl_gpe_lock, flags);
+
+	/* Free the free_list elements from the Notify path */
+	while (free_list) {
+		list = free_list->next;
+		ACPI_FREE(free_list);
+		free_list = list;
+	}
+
+	(void)acpi_ut_release_mutex(ACPI_MTX_EVENTS);
+	return_ACPI_STATUS(status);
+}
+
+/*******************************************************************************
+ *
  * FUNCTION:    acpi_ev_asynch_enable_gpe
  *
  * PARAMETERS:  Context (gpe_event_info) - Info for this GPE

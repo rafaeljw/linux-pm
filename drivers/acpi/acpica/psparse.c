@@ -108,6 +108,7 @@ acpi_ps_complete_this_op(struct acpi_walk_state *walk_state,
 {
 	union acpi_parse_object *prev;
 	union acpi_parse_object *next;
+	const struct acpi_opcode_info *op_info;
 	const struct acpi_opcode_info *parent_info;
 	union acpi_parse_object *replacement_op = NULL;
 	acpi_status status = AE_OK;
@@ -122,11 +123,18 @@ acpi_ps_complete_this_op(struct acpi_walk_state *walk_state,
 
 	acpi_ex_stop_trace_opcode(op, walk_state);
 
-	/* Delete this op and the subtree below it if asked to */
-
+	/*
+	 * Delete this op and the subtree below it if asked to
+	 *
+	 * Derive op_info from Op instead of using walk_state->op_info. While they are
+	 * often synonymous it is different during error unwind (in acpi_ps_complete_op).
+	 * Then the latter can describe a failed child object instead of the enclosing
+	 * operation that we want to handle here.
+	 */
+	op_info = acpi_ps_get_opcode_info(op->common.aml_opcode);
 	if (((walk_state->parse_flags & ACPI_PARSE_TREE_MASK) !=
-	     ACPI_PARSE_DELETE_TREE)
-	    || (walk_state->op_info->class == AML_CLASS_ARGUMENT)) {
+	     ACPI_PARSE_DELETE_TREE) ||
+	    ((op_info->class == AML_CLASS_ARGUMENT) && op->common.parent)) {
 		return_ACPI_STATUS(AE_OK);
 	}
 

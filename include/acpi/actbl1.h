@@ -588,8 +588,9 @@ struct acpi_cedt_rdpas {
 	struct acpi_cedt_header header;
 	u16 segment;
 	u16 bdf;
-	u8 protocol;
 	u64 address;
+	u8 protocol;
+	u8 reserved[3];
 };
 
 /* Masks for bdf field above */
@@ -1798,7 +1799,8 @@ enum acpi_hest_notify_types {
 	ACPI_HEST_NOTIFY_SEI = 9,	/* ACPI 6.1 */
 	ACPI_HEST_NOTIFY_GSIV = 10,	/* ACPI 6.1 */
 	ACPI_HEST_NOTIFY_SOFTWARE_DELEGATED = 11,	/* ACPI 6.2 */
-	ACPI_HEST_NOTIFY_RESERVED = 12	/* 12 and greater are reserved */
+	ACPI_HEST_NOTIFY_SSE = 12, /* RISC-V SSE */
+	ACPI_HEST_NOTIFY_RESERVED = 13 /* 13 and greater are reserved */
 };
 
 /* Values for config_write_enable bitfield above */

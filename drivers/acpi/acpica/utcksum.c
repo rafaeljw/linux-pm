@@ -58,8 +58,7 @@ acpi_status acpi_ut_verify_checksum(struct acpi_table_header *table, u32 length)
 		ACPI_BIOS_WARNING((AE_INFO,
 				   "Incorrect checksum in table [%4.4s] - 0x%2.2X, "
 				   "should be 0x%2.2X",
-				   table->signature, table->checksum,
-				   table->checksum - checksum));
+				   table->signature, table->checksum, checksum));
 
 #if (ACPI_CHECKSUM_ABORT)
 		return (AE_BAD_CHECKSUM);

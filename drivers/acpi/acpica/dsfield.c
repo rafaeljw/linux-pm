@@ -374,6 +374,12 @@ acpi_ds_get_field_names(struct acpi_create_field_info *info,
 
 		case AML_INT_NAMEDFIELD_OP:
 
+			/* Validate the 4-char name to prevent OOB read in acpi_ns_lookup */
+
+			if (!acpi_ut_valid_nameseg((char *)&arg->named.name)) {
+				return_ACPI_STATUS(AE_BAD_CHARACTER);
+			}
+
 			/* Lookup the name, it should already exist */
 
 			status = acpi_ns_lookup(walk_state->scope_info,
@@ -524,6 +530,18 @@ acpi_ds_create_field(union acpi_parse_object *op,
 	if (info.region_node->object->region.space_id ==
 	    ACPI_ADR_SPACE_PLATFORM_COMM &&
 	    !region_node->object->field.internal_pcc_buffer) {
+		/*
+	   * If AOPOBJ_DATA_VALID flag is not set the region operands is not
+	   * evaluated (e.g. disassembler), nothing to allocate.
+	   * Also avoid a zero-size allocation which may yield a non-NULL pointer
+	   */
+
+		if (!(info.region_node->object->common.flags &
+		      AOPOBJ_DATA_VALID) ||
+		    (!info.region_node->object->region.length)) {
+			return_ACPI_STATUS(AE_OK);
+		}
+
 		region_node->object->field.internal_pcc_buffer =
 		    ACPI_ALLOCATE_ZEROED(info.region_node->object->region.
 					 length);
@@ -630,6 +648,12 @@ acpi_ds_init_field_objects(union acpi_parse_object *op,
 		 * in the field names in order to enter them into the namespace.
 		 */
 		if (arg->common.aml_opcode == AML_INT_NAMEDFIELD_OP) {
+			/* Validate the 4-char name to prevent OOB read in acpi_ns_lookup */
+
+			if (!acpi_ut_valid_nameseg((char *)&arg->named.name)) {
+				return_ACPI_STATUS(AE_BAD_CHARACTER);
+			}
+
 			status = acpi_ns_lookup(walk_state->scope_info,
 						(char *)&arg->named.name, type,
 						ACPI_IMODE_LOAD_PASS1, flags,

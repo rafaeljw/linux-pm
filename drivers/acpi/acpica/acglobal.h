@@ -287,7 +287,7 @@ ACPI_INIT_GLOBAL(ACPI_PARSE_OBJECT_LIST, *acpi_gbl_temp_list_head, NULL);
 
 ACPI_GLOBAL(u8, acpi_gbl_dm_opt_disasm);
 ACPI_GLOBAL(u8, acpi_gbl_dm_opt_listing);
-ACPI_GLOBAL(u8, acpi_gbl_num_external_methods);
+ACPI_GLOBAL(u32, acpi_gbl_num_external_methods);
 ACPI_GLOBAL(u32, acpi_gbl_resolved_external_methods);
 ACPI_GLOBAL(struct acpi_external_list *, acpi_gbl_external_list);
 ACPI_GLOBAL(struct acpi_external_file *, acpi_gbl_external_file_list);

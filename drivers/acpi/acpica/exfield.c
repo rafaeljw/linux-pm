@@ -209,12 +209,32 @@ acpi_ex_read_data_from_field(struct acpi_walk_state *walk_state,
 		ACPI_DEBUG_PRINT((ACPI_DB_BFIELD,
 				  "PCC FieldRead bits %u\n",
 				  obj_desc->field.bit_length));
+		/*
+		 * Ensure the field access does not exceed the bounds of the
+		 * internal_pcc_buffer. The buffer is allocated with the region length,
+		 * so verify that base_byte_offset + field byte length <= Region.Length.
+		 */
+		if (!obj_desc->field.region_obj->field.internal_pcc_buffer) {
+			status = AE_AML_NO_OPERAND;
+			goto exit;
+		}
 
+		buffer_length = (acpi_size)ACPI_ROUND_BITS_UP_TO_BYTES(
+			obj_desc->field.bit_length);
+		if (obj_desc->field.base_byte_offset + buffer_length >
+		    obj_desc->field.region_obj->region.length) {
+			ACPI_ERROR((
+				AE_INFO,
+				"PCC field at offset %u length %u exceeds region size %u",
+				obj_desc->field.base_byte_offset, buffer_length,
+				obj_desc->field.region_obj->region.length));
+			status = AE_AML_BUFFER_LIMIT;
+			goto exit;
+		}
 		memcpy(buffer,
 		       obj_desc->field.region_obj->field.internal_pcc_buffer +
 		       obj_desc->field.base_byte_offset,
-		       (acpi_size)ACPI_ROUND_BITS_UP_TO_BYTES(obj_desc->field.
-							      bit_length));
+		       buffer_length);
 
 		*ret_buffer_desc = buffer_desc;
 		return AE_OK;
@@ -271,6 +291,7 @@ acpi_ex_write_data_to_field(union acpi_operand_object *source_desc,
 	acpi_status status;
 	u32 buffer_length;
 	u32 data_length;
+	u32 copy_length;
 	void *buffer;
 
 	ACPI_FUNCTION_TRACE_PTR(ex_write_data_to_field, obj_desc);
@@ -318,39 +339,6 @@ acpi_ex_write_data_to_field(union acpi_operand_object *source_desc,
 		    acpi_ex_write_serial_bus(source_desc, obj_desc,
 					     result_desc);
 		return_ACPI_STATUS(status);
-	} else if ((obj_desc->common.type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
-		   (obj_desc->field.region_obj->region.space_id ==
-		    ACPI_ADR_SPACE_PLATFORM_COMM)) {
-		/*
-		 * According to the spec a write to the COMD field will invoke the
-		 * region handler. Otherwise, write to the pcc_internal buffer. This
-		 * implementation will use the offsets specified rather than the name
-		 * of the field. This is considered safer because some firmware tools
-		 * are known to obfiscate named objects.
-		 */
-		data_length =
-		    (acpi_size)ACPI_ROUND_BITS_UP_TO_BYTES(obj_desc->field.
-							   bit_length);
-		memcpy(obj_desc->field.region_obj->field.internal_pcc_buffer +
-		       obj_desc->field.base_byte_offset,
-		       source_desc->buffer.pointer, data_length);
-
-		if (MASTER_SUBSPACE_COMMAND(obj_desc->field.base_byte_offset)) {
-
-			/* Perform the write */
-
-			ACPI_DEBUG_PRINT((ACPI_DB_BFIELD,
-					  "PCC COMD field has been written. Invoking PCC handler now.\n"));
-
-			status =
-			    acpi_ex_access_region(obj_desc, 0,
-						  (u64 *)obj_desc->field.
-						  region_obj->field.
-						  internal_pcc_buffer,
-						  ACPI_WRITE);
-			return_ACPI_STATUS(status);
-		}
-		return (AE_OK);
 	}
 
 	/* Get a pointer to the data to be written */
@@ -376,6 +364,65 @@ acpi_ex_write_data_to_field(union acpi_operand_object *source_desc,
 
 	default:
 		return_ACPI_STATUS(AE_AML_OPERAND_TYPE);
+	}
+
+	if ((obj_desc->common.type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
+		   (obj_desc->field.region_obj->region.space_id ==
+		    ACPI_ADR_SPACE_PLATFORM_COMM)) {
+		/*
+		 * According to the spec a write to the COMD field will invoke the
+		 * region handler. Otherwise, write to the pcc_internal buffer. This
+		 * implementation will use the offsets specified rather than the name
+		 * of the field. This is considered safer because some firmware tools
+		 * are known to obfiscate named objects.
+		 *
+		 * Ensure the field access does not exceed the bounds of the
+		 * internal_pcc_buffer.
+		 */
+		data_length =
+		    (acpi_size)ACPI_ROUND_BITS_UP_TO_BYTES(obj_desc->field.
+							   bit_length);
+
+		if (!obj_desc->field.region_obj->field.internal_pcc_buffer) {
+			return_ACPI_STATUS(AE_AML_NO_OPERAND);
+		}
+
+		if (obj_desc->field.base_byte_offset + data_length >
+		    obj_desc->field.region_obj->region.length) {
+			ACPI_ERROR((
+				AE_INFO,
+				"PCC field at offset %u length %u exceeds region size %u",
+				obj_desc->field.base_byte_offset, data_length,
+				obj_desc->field.region_obj->region.length));
+			return_ACPI_STATUS(AE_AML_BUFFER_LIMIT);
+		}
+
+		copy_length = ACPI_MIN(data_length, buffer_length);
+
+		memset(obj_desc->field.region_obj->field.internal_pcc_buffer +
+			       obj_desc->field.base_byte_offset,
+		       0, data_length);
+
+		memcpy(obj_desc->field.region_obj->field.internal_pcc_buffer +
+		       obj_desc->field.base_byte_offset,
+		       buffer, copy_length);
+
+		if (MASTER_SUBSPACE_COMMAND(obj_desc->field.base_byte_offset)) {
+
+			/* Perform the write */
+
+			ACPI_DEBUG_PRINT((ACPI_DB_BFIELD,
+					  "PCC COMD field has been written. Invoking PCC handler now.\n"));
+
+			status =
+			    acpi_ex_access_region(obj_desc, 0,
+						  (u64 *)obj_desc->field.
+						  region_obj->field.
+						  internal_pcc_buffer,
+						  ACPI_WRITE);
+			return_ACPI_STATUS(status);
+		}
+		return (AE_OK);
 	}
 
 	ACPI_DEBUG_PRINT((ACPI_DB_BFIELD,

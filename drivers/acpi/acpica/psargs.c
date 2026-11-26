@@ -760,6 +760,8 @@ static union acpi_parse_object *acpi_ps_get_next_field(struct acpi_parse_state
 
 				ASL_CV_CAPTURE_COMMENTS_ONLY(parser_state);
 				arg->named.value.size = buffer_length;
+				arg->named.length = (u32)ACPI_PTR_DIFF(
+					pkg_end, parser_state->aml);
 				arg->named.data = parser_state->aml;
 			}
 
@@ -933,9 +935,9 @@ acpi_ps_get_next_arg(struct acpi_walk_state *walk_state,
 
 			/* Fill in bytelist data */
 
-			arg->common.value.size = (u32)
-			    ACPI_PTR_DIFF(parser_state->pkg_end,
-					  parser_state->aml);
+			arg->common.value.size = arg->named.length =
+				(u32)ACPI_PTR_DIFF(parser_state->pkg_end,
+						   parser_state->aml);
 			arg->named.data = parser_state->aml;
 
 			/* Skip to End of byte data */

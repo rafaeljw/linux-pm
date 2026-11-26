@@ -152,7 +152,7 @@ acpi_ex_trace_point(acpi_trace_event_type type,
  * FUNCTION:    acpi_ex_trace_args
  *
  * PARAMETERS:  params            - AML method arguments
- *              count             - numer of method arguments
+ *              count             - number of method arguments
  *
  * RETURN:      None
  *

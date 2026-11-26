@@ -295,11 +295,27 @@ acpi_ex_store_object_to_index(union acpi_operand_object *source_desc,
 			break;
 
 		case ACPI_TYPE_BUFFER:
-		case ACPI_TYPE_STRING:
 
-			/* Note: Takes advantage of common string/buffer fields */
+			/*
+			 * A zero-length buffer has no first element and a NULL
+			 * Pointer (see acpi_ut_create_buffer_object). Reject it, as is
+			 * done for the buffer-to-integer conversion.
+			 */
+			if (!source_desc->buffer.length) {
+				ACPI_BIOS_EXCEPTION((
+					AE_INFO, AE_AML_BUFFER_LIMIT,
+					"Source is a zero-length buffer, no data to store"));
+				return_ACPI_STATUS(AE_AML_BUFFER_LIMIT);
+			}
 
 			value = source_desc->buffer.pointer[0];
+			break;
+
+		case ACPI_TYPE_STRING:
+
+			/* A String always has a pointer; a null string stores a zero */
+
+			value = (u8)source_desc->string.pointer[0];
 			break;
 
 		default:

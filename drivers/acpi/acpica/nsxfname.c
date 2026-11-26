@@ -519,6 +519,14 @@ acpi_status acpi_install_method(u8 *buffer)
 	}
 	path = acpi_ps_get_next_namestring(&parser_state);
 
+	/*
+	 * Path can be NULL, and Aml can be pkg_end which combined with the Aml++
+	 * a few lines below will cause aml_length to underflow.
+	 */
+	if (!path || (parser_state.aml >= parser_state.pkg_end)) {
+		return (AE_AML_PACKAGE_LIMIT);
+	}
+
 	method_flags = *parser_state.aml++;
 	aml_start = parser_state.aml;
 	aml_length = (u32)ACPI_PTR_DIFF(parser_state.pkg_end, aml_start);

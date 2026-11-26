@@ -42,7 +42,7 @@ static void __init iovt_enable_acs(struct acpi_iovt_iommu *iommu)
 
 	/* IOMMU V1 only supports PCI device management */
 	if ((iommu->header.type == ACPI_IOVT_IOMMU_V1) ||
-	    (iommu->flags & (ACPI_IOVT_IOMMU_PCI_DEVICE | ACPI_IOVT_IOMMU_MAGAGE_BY_SEGMENT))) {
+	    (iommu->flags & (ACPI_IOVT_IOMMU_PCI_DEVICE | ACPI_IOVT_IOMMU_MANAGE_BY_SEGMENT))) {
 		pci_request_acs();
 		acs_enabled = true;
 	}
@@ -151,7 +151,7 @@ static int __init iovt_add_iommu(struct acpi_iovt_iommu *iommu)
 	}
 
 	/* All devices in the segment are managed by this IOMMU */
-	if (np->flag & ACPI_IOVT_IOMMU_MAGAGE_BY_SEGMENT)
+	if (np->flag & ACPI_IOVT_IOMMU_MANAGE_BY_SEGMENT)
 		goto skip;
 
 	if (iovt_validate_entries(iommu) < 0) {
@@ -280,7 +280,7 @@ static int iovt_pci_iommu_init(struct pci_dev *pdev, u16 dev_id, void *data)
 		if (dev_id == np->devid)
 			return -EINVAL;
 
-		if (np->flag & ACPI_IOVT_IOMMU_MAGAGE_BY_SEGMENT)
+		if (np->flag & ACPI_IOVT_IOMMU_MANAGE_BY_SEGMENT)
 			goto found;
 
 		list_for_each_entry(entry, &np->ep_list, list) {

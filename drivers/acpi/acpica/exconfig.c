@@ -461,9 +461,8 @@ acpi_ex_load_op(union acpi_operand_object *obj_desc,
 	acpi_ex_enter_interpreter();
 	if (ACPI_FAILURE(status)) {
 
-		/* Delete allocated table buffer */
+		/* Table buffer is already freed by acpi_tb_install_and_load_table */
 
-		ACPI_FREE(table);
 		return_ACPI_STATUS(status);
 	}
 

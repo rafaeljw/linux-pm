@@ -995,7 +995,9 @@ acpi_tb_load_table(u32 table_index, struct acpi_namespace_node *parent_node)
  *
  * RETURN:      Status
  *
- * DESCRIPTION: Install and load an ACPI table
+ * DESCRIPTION: Install and load an ACPI table. An internally allocated
+ *              table (ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL) is always consumed,
+ *              on failure it is freed here.
  *
  ******************************************************************************/
 
@@ -1015,10 +1017,24 @@ acpi_tb_install_and_load_table(acpi_physical_address address,
 	status = acpi_tb_install_standard_table(address, flags, table, TRUE,
 						override, &i);
 	if (ACPI_FAILURE(status)) {
+		/*
+		 * Table was not installed (e.g. it is a duplicate or failed
+		 * verification), so nobody else will free an internal buffer
+		 */
+		if ((flags & ACPI_TABLE_ORIGIN_MASK) ==
+		    ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL) {
+			ACPI_FREE(table);
+		}
 		goto exit;
 	}
 
 	status = acpi_tb_load_table(i, acpi_gbl_root_node);
+	if (ACPI_FAILURE(status)) {
+		/* Table was installed but not loaded, uninstall to clean up */
+
+		acpi_tb_uninstall_table(&acpi_gbl_root_table_list.tables[i]);
+		goto exit;
+	}
 
 exit:
 	*table_index = i;
@@ -1043,6 +1059,7 @@ acpi_status acpi_tb_unload_table(u32 table_index)
 {
 	acpi_status status = AE_OK;
 	struct acpi_table_header *table;
+	acpi_owner_id ACPI_UNUSED_VAR owner_id;
 
 	ACPI_FUNCTION_TRACE(tb_unload_table);
 
@@ -1051,6 +1068,19 @@ acpi_status acpi_tb_unload_table(u32 table_index)
 	if (!acpi_tb_is_table_loaded(table_index)) {
 		return_ACPI_STATUS(AE_NOT_EXIST);
 	}
+
+#if (!ACPI_REDUCED_HARDWARE)
+	/*
+	 * Clear GPE dispatch for methods owned by the table being unloaded.
+	 * If any matching GPE is currently dispatching, AE_ABORT_METHOD is
+	 * returned and the unload cannot proceed.
+	 */
+	acpi_tb_get_owner_id(table_index, &owner_id);
+	status = acpi_ev_clear_gpe_dispatch_by_owner(owner_id);
+	if (ACPI_FAILURE(status)) {
+		return_ACPI_STATUS(status);
+	}
+#endif /* !ACPI_REDUCED_HARDWARE */
 
 	/* Invoke table handler */
 
