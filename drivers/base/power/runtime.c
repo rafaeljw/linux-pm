@@ -833,7 +833,8 @@ static int rpm_suspend(struct device *dev, int rpmflags)
  * suspending (deferred_resume) or wait for it to finish.  If the RPM_ASYNC
  * flag is set then queue a resume request; otherwise run the
  * ->runtime_resume() callback directly.  Queue an idle notification for the
- * device if the resume succeeded.
+ * device if the resume succeeded or the device's runtime PM status was
+ * RPM_ACTIVE to start with.
  *
  * This function must be called under dev->power.lock with interrupts disabled.
  */
@@ -872,14 +873,8 @@ static int rpm_resume(struct device *dev, int rpmflags)
 		pm_runtime_deactivate_timer(dev);
 
 	if (dev->power.runtime_status == RPM_ACTIVE) {
-		/*
-		 * The attempt to resume the device means that it is needed for
-		 * something, so update its last_busy timestamp as in the case
-		 * in which it actually resumes below.
-		 */
-		pm_runtime_mark_last_busy(dev);
 		retval = 1;
-		goto out;
+		goto success;
 	}
 
 	if (dev->power.runtime_status == RPM_RESUMING ||
@@ -1009,8 +1004,11 @@ static int rpm_resume(struct device *dev, int rpmflags)
 	}
 	wake_up_all(&dev->power.wait_queue);
 
-	if (retval >= 0)
-		rpm_idle(dev, RPM_ASYNC);
+	if (retval < 0)
+		goto out;
+
+ success:
+	rpm_idle(dev, RPM_ASYNC);
 
  out:
 	if (parent && !dev->power.irq_safe) {
