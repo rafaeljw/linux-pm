@@ -186,6 +186,16 @@ u64 pm_runtime_autosuspend_expiration(struct device *dev)
 	if (autosuspend_delay < 0)
 		return 0;
 
+	/*
+	 * If the last_busy access below gets reordered before the initial usage
+	 * counter check in rpm_suspend(), last_busy updates made before any of
+	 * the following may be missed:
+	 * - rpm_drop_usage_count() in __pm_runtime_idle() and
+	 *   __pm_runtime_suspend(),
+	 * - the usage count update in pm_runtime_release_supplier(),
+	 * - the child_count update in rpm_release_parent().
+	 */
+	smp_rmb();
 	expires  = READ_ONCE(dev->power.last_busy);
 	expires += (u64)autosuspend_delay * NSEC_PER_MSEC;
 	if (expires > ktime_get_mono_fast_ns())
@@ -325,6 +335,16 @@ static int rpm_get_suppliers(struct device *dev)
 void pm_runtime_release_supplier(struct device_link *link)
 {
 	struct device *supplier = link->supplier;
+
+	/*
+	 * Since rpm_suspend() may run as a whole right after the loop below,
+	 * prevent it from suspending the supplier without respecting its
+	 * autosuspend delay.  The last_busy update cannot be reordered with
+	 * the usage counter update in pm_runtime_put_noidle(), which is fully
+	 * ordered and pairs with the read memory barrier in
+	 * pm_runtime_autosuspend_expiration().
+	 */
+	pm_runtime_mark_last_busy(supplier);
 
 	/*
 	 * The additional power.usage_count check is a safety net in case
@@ -518,6 +538,13 @@ static int rpm_idle(struct device *dev, int rpmflags)
 	else if (dev->power.idle_notification)
 		retval = -EINPROGRESS;
 
+	/*
+	 * Since an autosuspend timer may be running and the new last_busy value
+	 * needs to be seen by it, update last_busy before returning an error or
+	 * dropping the spinlock and allowing the timer function to grab it.
+	 */
+	pm_runtime_mark_last_busy(dev);
+
 	if (retval)
 		goto out;
 
@@ -565,6 +592,25 @@ static int rpm_idle(struct device *dev, int rpmflags)
 
 	pm_runtime_mark_last_busy(dev);
 	return rpm_suspend(dev, rpmflags | RPM_AUTO);
+}
+
+static void rpm_release_parent(struct device *parent)
+{
+	/*
+	 * Since rpm_suspend() may run as a whole for parent right after its
+	 * child_count update below, prevent it from suspending parent without
+	 * respecting its autosuspend delay.
+	 */
+	if (!parent->power.ignore_children)
+		pm_runtime_mark_last_busy(parent);
+
+	/*
+	 * A successful atomic_add_unless() call is a memory barrier which is
+	 * sufficient to enforce the requisite ordering with respect to the
+	 * last_busy update above and it pairs with the read memory barrier in
+	 * pm_runtime_autosuspend_expiration().
+	 */
+	atomic_add_unless(&parent->power.child_count, -1, 0);
 }
 
 /**
@@ -712,7 +758,7 @@ static int rpm_suspend(struct device *dev, int rpmflags)
 
 	if (dev->parent) {
 		parent = dev->parent;
-		atomic_add_unless(&parent->power.child_count, -1, 0);
+		rpm_release_parent(parent);
 	}
 	wake_up_all(&dev->power.wait_queue);
 
@@ -1132,6 +1178,15 @@ int __pm_runtime_idle(struct device *dev, int rpmflags)
 	int retval;
 
 	if (rpmflags & RPM_GET_PUT) {
+		/*
+		 * Since rpm_suspend() may run as a whole right after the usage
+		 * counter decrementation below, prevent it from suspending the
+		 * device without respecting its autosuspend delay.  The
+		 * requisite ordering is enforced by rpm_drop_usage_count(),
+		 * which is an implicit memory barrier and pairs with the
+		 * explicit one in pm_runtime_autosuspend_expiration().
+		 */
+		pm_runtime_mark_last_busy(dev);
 		retval = rpm_drop_usage_count(dev);
 		if (retval < 0) {
 			return retval;
@@ -1376,7 +1431,7 @@ int __pm_runtime_set_status(struct device *dev, unsigned int status)
 		goto out_set;
 
 	if (status == RPM_SUSPENDED) {
-		atomic_add_unless(&parent->power.child_count, -1, 0);
+		rpm_release_parent(parent);
 		notify_parent = !parent->power.ignore_children;
 	} else {
 		spin_lock_nested(&parent->power.lock, SINGLE_DEPTH_NESTING);

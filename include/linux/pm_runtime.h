@@ -668,9 +668,9 @@ DEFINE_GUARD_COND(pm_runtime_active_auto, _try_enabled,
  * Decrement the runtime PM usage counter of @dev. If the counter drops to zero,
  * synchronously evaluate and trigger idle/suspend handling.
  *
- * Note that this does not update the last access time, but it does respect
- * existing autosuspend timers. If @dev uses autosuspend, consider using
- * pm_runtime_put_sync_autosuspend() or pm_runtime_put_sync_suspend() instead.
+ * This updates the last access time and respects existing autosuspend timers.
+ * If @dev uses autosuspend and respecting its autosuspend delay is not
+ * desirable, consider using pm_runtime_put_sync_suspend() instead.
  *
  * The runtime PM usage counter of @dev remains decremented in all cases, even
  * if it returns an error code.
